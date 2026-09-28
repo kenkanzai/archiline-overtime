@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#155E54">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Overtime">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+<title>Overtime record</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#F6F7F4;--panel:#FFFFFF;--ink:#17201E;--muted:#5F6B68;--line:#D9DED9;--brand:#155E54;--brand-ink:#FFFFFF;--tint:#E3EFEA;--off:#FBE3E3;--off-ink:#7A2626;--danger:#9E2F2F}
+@media (prefers-color-scheme:dark){:root{--bg:#131917;--panel:#1B2320;--ink:#ECEFEC;--muted:#9AA8A3;--line:#2E3935;--brand:#5DCAA5;--brand-ink:#04342C;--tint:#1F332D;--off:#3A2222;--off-ink:#F09595;--danger:#F09595}}
+*{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1040px;margin:0 auto;padding:16px 12px 48px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:16px}
+h1{font-size:24px;font-weight:600;margin:0}
+.sub{color:var(--muted);font-size:14px;display:flex;gap:6px;align-items:center}
+.sub input{width:160px}
+.monthnav{display:flex;align-items:center;gap:6px}
+.monthnav strong{font-size:17px;font-weight:600;min-width:140px;text-align:center}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:8px 14px}
+button:hover{border-color:var(--brand)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+button.primary{background:var(--brand);color:var(--brand-ink);border-color:var(--brand);font-weight:600}
+button.icon{padding:6px 10px}
+.grid{display:grid;grid-template-columns:1fr;gap:16px}
+@media (min-width:900px){.grid{grid-template-columns:1fr 340px}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.panel h2{font-size:16px;font-weight:600;margin:0 0 10px}
+input{font:inherit;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+input[type=number]{text-align:right;font-variant-numeric:tabular-nums}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:13px;padding:6px 6px;border-bottom:1px solid var(--line)}
+td{padding:3px 4px;border-bottom:1px solid var(--line);vertical-align:middle;white-space:nowrap}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;width:74px}
+td.txt input{min-width:100px}
+tr.off td{background:var(--off);color:var(--off-ink)}
+tr.off input{background:transparent;border-color:transparent}
+tr.off input:focus{border-color:var(--line);background:var(--panel);color:var(--ink)}
+tr.today td:first-child{font-weight:600}
+tr.me td{background:var(--tint)}
+tfoot td{font-weight:600;border-top:2px solid var(--line);padding:8px 4px}
+.tscroll{overflow-x:auto}
+.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.msg{font-size:13px;color:var(--muted);min-height:18px}
+.msg.err{color:var(--danger)}
+.big{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px}
+.big div span{display:block;font-size:13px;color:var(--muted)}
+.big div b{font-size:24px;font-weight:600;line-height:1.1}
+.note{color:var(--muted);font-size:13px;margin:8px 0 0}
+.link{background:none;border:none;color:var(--danger);padding:0;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Overtime record</h1>
+      <div class="sub"><span>Your name</span><input id="name" placeholder="e.g. Christopher"></div>
+    </div>
+    <div class="monthnav">
+      <button class="icon" id="prev" aria-label="Previous month">‹</button>
+      <strong id="monthLabel"></strong>
+      <button class="icon" id="next" aria-label="Next month">›</button>
+      <button id="today">This month</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>Your overtime</h2>
+      <div class="tscroll"><table>
+        <thead><tr><th>Day</th><th class="num">HRS</th><th class="num">MINS</th><th>Project</th><th>Note</th></tr></thead>
+        <tbody id="dayBody"></tbody>
+        <tfoot>
+          <tr><td>Column totals</td><td class="num" id="sumH">0</td><td class="num" id="sumM">0</td><td colspan="2"></td></tr>
+          <tr><td>Total</td><td class="num" colspan="2" id="sumT">0 h 00 min</td><td colspan="2" id="sumDec" class="note" style="margin:0"></td></tr>
+          <tr><td><label for="rate">Rate per hour</label></td><td class="num" colspan="2"><input type="number" id="rate" min="0" step="0.01" placeholder="0.00"></td><td colspan="2"></td></tr>
+          <tr><td>Overtime pay</td><td class="num" colspan="2" id="pay">0.00</td><td colspan="2" class="note" style="margin:0" id="payNote"></td></tr>
+        </tfoot>
+      </table></div>
+      <div class="actions">
+        <span class="msg" id="msg">Saved automatically on this device.</span>
+      </div>
+      <p class="note">Fridays are shaded as days off; you can still enter hours on them. Minutes are 0 to 59.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Team this month</h2>
+      <div class="big">
+        <div><span>Team total</span><b id="teamTotal">0 h</b></div>
+        <div><span>People</span><b id="people">0</b></div>
+      </div>
+      <div class="tscroll"><table>
+        <thead><tr><th>Person</th><th class="num">Days</th><th class="num">Total</th><th></th></tr></thead>
+        <tbody id="teamBody"></tbody>
+      </table></div>
+      <div class="actions">
+        <button class="primary" id="shareMine">Share my month</button>
+        <button id="importBtn">Import teammate file</button>
+        <input type="file" id="importFile" accept=".json,application/json" multiple style="display:none">
+      </div>
+      <div class="actions">
+        <button id="exportCsv">Export month (CSV)</button>
+      </div>
+      <p class="note">Share sends or saves a small file. Teammates import it here to build the team table. Re-importing the same person replaces their old month.</p>
+    </section>
+  </div>
+</div>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var KEY="overtime:v1";
+  var store=load();
+  var month=new Date(); month=new Date(month.getFullYear(),month.getMonth(),1);
+
+  function load(){
+    try{var s=JSON.parse(localStorage.getItem(KEY)||"null"); if(s&&s.months) return s}catch(e){}
+    return {name:"",months:{},team:{}};
+  }
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){setMsg("Could not save on this device.",true)}}
+
+  function ym(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")}
+  function iso(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+  function monthName(d){return d.toLocaleDateString(undefined,{month:"long",year:"numeric"})}
+  function setMsg(t,err){var m=$("msg");m.textContent=t;m.className="msg"+(err?" err":"")}
+  function hm(mins){return Math.floor(mins/60)+" h "+String(mins%60).padStart(2,"0")+" min"}
+  function mins(e){return (Number(e.hours)||0)*60+(Number(e.mins)||0)}
+  function sumDays(days){var t=0,n=0;for(var k in days){t+=mins(days[k]);n++}return{mins:t,count:n}}
+
+  function buildGrid(){
+    $("monthLabel").textContent=monthName(month);
+    var tb=$("dayBody"); tb.textContent="";
+    var last=new Date(month.getFullYear(),month.getMonth()+1,0).getDate(), todayIso=iso(new Date());
+    var days=store.months[ym(month)]||{};
+    for(var d=1;d<=last;d++){
+      var dt=new Date(month.getFullYear(),month.getMonth(),d), key=iso(dt), e=days[key];
+      var tr=document.createElement("tr"); tr.dataset.key=key;
+      if(dt.getDay()===5) tr.className="off"; if(key===todayIso) tr.className+=" today";
+      var c0=document.createElement("td"); c0.textContent=dt.toLocaleDateString(undefined,{weekday:"short",day:"numeric"})+(dt.getDay()===5?"  · off":"");
+      var c1=mk("num","number",e&&e.hours?e.hours:"","h",key,{min:0,max:16,step:1});
+      var c2=mk("num","number",e&&e.mins?e.mins:"","m",key,{min:0,max:59,step:5});
+      var c3=mk("txt","text",e&&e.project?e.project:"","p",key,{});
+      var c4=mk("txt","text",e&&e.note?e.note:"","n",key,{});
+      tr.append(c0,c1,c2,c3,c4); tb.appendChild(tr);
+    }
+    recalc(); renderTeam();
+  }
+  function mk(cls,type,val,f,key,attrs){
+    var td=document.createElement("td"); td.className=cls; var i=document.createElement("input"); i.type=type; i.value=val; i.dataset.f=f;
+    for(var a in attrs) i.setAttribute(a,attrs[a]); i.setAttribute("aria-label",f+" "+key); td.appendChild(i); return td;
+  }
+
+  function readGrid(){
+    var days={}, bad=null;
+    document.querySelectorAll("#dayBody tr").forEach(function(tr){
+      var h=tr.querySelector('[data-f=h]').value, m=tr.querySelector('[data-f=m]').value;
+      var p=tr.querySelector('[data-f=p]').value.trim(), n=tr.querySelector('[data-f=n]').value.trim();
+      var H=h===""?0:Number(h), M=m===""?0:Number(m);
+      if(H<0||H>16||M<0||M>59||!Number.isInteger(H)||!Number.isInteger(M)){bad=tr.dataset.key;return}
+      if(H===0&&M===0&&!p&&!n) return;
+      days[tr.dataset.key]={hours:H,mins:M,project:p,note:n};
+    });
+    return{days:days,bad:bad};
+  }
+  function recalc(){
+    var r=readGrid(), sH=0,sM=0;
+    for(var k in r.days){sH+=r.days[k].hours;sM+=r.days[k].mins}
+    $("sumH").textContent=sH; $("sumM").textContent=sM;
+    var total=sH*60+sM; $("sumT").textContent=hm(total);
+    $("sumDec").textContent="= "+(Math.round(total/60*100)/100)+" h decimal";
+    var rate=Number(store.rate)||0;
+    $("pay").textContent=(total/60*rate).toFixed(2);
+    $("payNote").textContent=rate?"":"Enter your rate per hour";
+    return r;
+  }
+  var timer=null;
+  $("dayBody").addEventListener("input",function(){
+    var r=recalc();
+    if(r.bad){setMsg("Check "+r.bad+": hours 0-16, minutes 0-59, whole numbers.",true);return}
+    store.months[ym(month)]=r.days; clearTimeout(timer);
+    timer=setTimeout(function(){save();setMsg("Saved.");renderTeam()},300);
+  });
+  $("rate").value=store.rate||"";
+  $("rate").oninput=function(){var v=this.value===""?0:Number(this.value);if(v<0||isNaN(v)){setMsg("Rate must be 0 or more.",true);return}store.rate=v;save();recalc();setMsg("Saved.")};
+  $("name").value=store.name||"";
+  $("name").oninput=function(){store.name=this.value.trim();save();renderTeam()};
+
+  function renderTeam(){
+    var m=ym(month), rows=[], team=0;
+    var mine=sumDays(store.months[m]||{});
+    if(mine.count||store.name) rows.push({name:(store.name||"You")+" (you)",days:mine.count,mins:mine.mins,me:true});
+    team+=mine.mins;
+    for(var nm in store.team){ var md=store.team[nm][m]; if(!md) continue; var s=sumDays(md); rows.push({name:nm,days:s.count,mins:s.mins,key:nm}); team+=s.mins; }
+    rows.sort(function(a,b){return b.mins-a.mins});
+    var tb=$("teamBody"); tb.textContent="";
+    rows.forEach(function(r){
+      var tr=document.createElement("tr"); if(r.me) tr.className="me";
+      [r.name,r.days,hm(r.mins)].forEach(function(v,i){var td=document.createElement("td");if(i)td.className="num";td.textContent=v;tr.appendChild(td)});
+      var td=document.createElement("td");
+      if(!r.me){var b=document.createElement("button");b.className="link";b.textContent="Remove";b.onclick=function(){if(confirm("Remove "+r.key+" from "+monthName(month)+"?")){delete store.team[r.key][m];if(!Object.keys(store.team[r.key]).length)delete store.team[r.key];save();renderTeam()}};td.appendChild(b)}
+      tr.appendChild(td); tb.appendChild(tr);
+    });
+    $("teamTotal").textContent=hm(team); $("people").textContent=rows.length;
+  }
+
+  function go(d){month=d;buildGrid()}
+  $("prev").onclick=function(){go(new Date(month.getFullYear(),month.getMonth()-1,1))};
+  $("next").onclick=function(){go(new Date(month.getFullYear(),month.getMonth()+1,1))};
+  $("today").onclick=function(){var t=new Date();go(new Date(t.getFullYear(),t.getMonth(),1))};
+
+  async function deliver(name,text,type){
+    var blob=new Blob([text],{type:type}), file=new File([blob],name,{type:type});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:name});return}catch(e){if(e&&e.name==="AbortError")return}}
+    var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){URL.revokeObjectURL(a.href)},2000);
+  }
+
+  $("shareMine").onclick=function(){
+    if(!store.name){setMsg("Enter your name first (top left).",true);$("name").focus();return}
+    var m=ym(month), payload={app:"overtime-record",v:1,name:store.name,month:m,days:store.months[m]||{}};
+    deliver("overtime-"+store.name.replace(/[^\w-]+/g,"_")+"-"+m+".json",JSON.stringify(payload,null,1),"application/json");
+  };
+  $("importBtn").onclick=function(){$("importFile").click()};
+  $("importFile").onchange=function(){
+    var files=Array.from(this.files), done=0, bad=0;
+    files.forEach(function(f){
+      var r=new FileReader();
+      r.onload=function(){
+        try{
+          var p=JSON.parse(r.result);
+          if(p.app!=="overtime-record"||!p.name||!p.month||!p.days) throw 0;
+          if(p.name===store.name){ if(confirm("This file is your own ("+p.name+"). Replace your "+p.month+" record with it?")){store.months[p.month]=p.days} }
+          else { store.team[p.name]=store.team[p.name]||{}; store.team[p.name][p.month]=p.days; }
+          done++;
+        }catch(e){bad++}
+        if(done+bad===files.length){save();buildGrid();setMsg("Imported "+done+" file"+(done===1?"":"s")+(bad?", "+bad+" not recognised":"")+".",bad>0)}
+      };
+      r.readAsText(f);
+    });
+    this.value="";
+  };
+
+  $("exportCsv").onclick=function(){
+    var m=ym(month), lines=[["Person","Date","HRS","MINS","Project","Note"]], team=0;
+    var all=[[store.name||"Me",store.months[m]||{}]];
+    for(var nm in store.team) if(store.team[nm][m]) all.push([nm,store.team[nm][m]]);
+    all.forEach(function(pair){var nm=pair[0],days=pair[1],t=0;
+      Object.keys(days).sort().forEach(function(d){var e=days[d];t+=mins(e);lines.push([nm,d,e.hours||0,e.mins||0,e.project||"",e.note||""])});
+      lines.push([nm+" total",m,Math.floor(t/60),t%60,"",""]); team+=t;
+    });
+    lines.push(["Team total",m,Math.floor(team/60),team%60,"",""]);
+    var csv=lines.map(function(r){return r.map(function(v){v=String(v==null?"":v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(",")}).join("\r\n");
+    deliver("overtime-"+m+".csv","\ufeff"+csv,"text/csv");
+  };
+
+  /* first run: seed September 2026 from the sheet */
+  if(!Object.keys(store.months).length&&!localStorage.getItem(KEY)){
+    var S={"01":[1,30],"02":[1,0],"03":[0,35],"05":[1,30],"06":[1,0],"07":[1,30],"08":[1,0],"09":[0,45],"12":[1,0],"13":[0,45],"14":[1,30],"15":[0,30],"16":[1,0],"17":[0,45],"19":[0,30],"21":[1,0],"22":[0,45],"24":[0,30],"26":[1,30],"27":[0,30]};
+    var days={}; for(var k in S) days["2026-09-"+k]={hours:S[k][0],mins:S[k][1],project:"",note:""};
+    store.months["2026-09"]=days; save();
+  }
+
+  buildGrid();
+  if("serviceWorker" in navigator && location.protocol.startsWith("http")){navigator.serviceWorker.register("sw.js").catch(function(){})}
+})();
+</script>
+</body>
+</html>
