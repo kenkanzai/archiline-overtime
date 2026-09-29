@@ -53,6 +53,26 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);padding:8px 4px}
 .big div b{font-size:24px;font-weight:600;line-height:1.1}
 .note{color:var(--muted);font-size:13px;margin:8px 0 0}
 .link{background:none;border:none;color:var(--danger);padding:0;font-size:13px}
+#printArea{display:none}
+@media print{
+  @page{size:A4 portrait;margin:12mm}
+  body{background:#fff;color:#000;font-size:10pt}
+  .wrap{display:none}
+  #printArea{display:block}
+  #printArea *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  #printArea h1{font-size:16pt;margin:0 0 2mm;text-align:center;background:#F4A6A6;padding:1.5mm;border:1px solid #000}
+  #printArea .meta{display:flex;justify-content:space-between;margin:0 0 2mm;font-size:10pt}
+  #printArea{width:100%}
+  #printArea table{width:100%;border-collapse:collapse;font-size:9pt;table-layout:fixed}
+  #printArea th:first-child{width:36%}
+  #printArea th,#printArea td{border:1px solid #000;padding:.6mm 1.5mm;color:#000;background:#fff;overflow:hidden;text-overflow:ellipsis}
+  #printArea th{background:#FBE3D6;font-weight:600;text-align:center}
+  #printArea td.n{text-align:right;font-variant-numeric:tabular-nums}
+  #printArea th:nth-child(2),#printArea th:nth-child(3){width:11%}
+  #printArea tr.off td{background:#F4A6A6}
+  #printArea tr.tot td{font-weight:700;background:#FBE3D6}
+  #printArea .pb{break-before:page}
+}
 </style>
 </head>
 <body>
@@ -105,13 +125,15 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);padding:8px 4px}
         <input type="file" id="importFile" accept=".json,application/json" multiple style="display:none">
       </div>
       <div class="actions">
-        <button id="exportCsv">Export month (CSV)</button>
+        <button id="exportXlsx">Export Excel</button>
+        <button id="exportPdf">Export PDF</button>
       </div>
-      <p class="note">Share sends or saves a small file. Teammates import it here to build the team table. Re-importing the same person replaces their old month.</p>
+      <p class="note">Share sends or saves a small file. Teammates import it here to build the team table. Re-importing the same person replaces their old month. Export PDF opens the print window: choose Save as PDF.</p>
     </section>
   </div>
 </div>
 
+<div id="printArea"></div>
 <script>
 (function(){
   var $=function(id){return document.getElementById(id)};
@@ -246,18 +268,164 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);padding:8px 4px}
     this.value="";
   };
 
-  $("exportCsv").onclick=function(){
-    var m=ym(month), lines=[["Person","Date","HRS","MINS","Project","Note"]], team=0;
-    var all=[[store.name||"Me",store.months[m]||{}]];
-    for(var nm in store.team) if(store.team[nm][m]) all.push([nm,store.team[nm][m]]);
-    all.forEach(function(pair){var nm=pair[0],days=pair[1],t=0;
-      Object.keys(days).sort().forEach(function(d){var e=days[d];t+=mins(e);lines.push([nm,d,e.hours||0,e.mins||0,e.project||"",e.note||""])});
-      lines.push([nm+" total",m,Math.floor(t/60),t%60,"",""]); team+=t;
+  /* ---------- shared report data ---------- */
+  function people(m){
+    var all=[{name:store.name||"Me",days:store.months[m]||{},rate:Number(store.rate)||0,me:true}];
+    Object.keys(store.team).sort().forEach(function(nm){if(store.team[nm][m])all.push({name:nm,days:store.team[nm][m],rate:0})});
+    return all;
+  }
+  function monthDays(){
+    var out=[],last=new Date(month.getFullYear(),month.getMonth()+1,0).getDate();
+    for(var d=1;d<=last;d++) out.push(new Date(month.getFullYear(),month.getMonth(),d));
+    return out;
+  }
+  function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+
+  /* ---------- minimal ZIP (store) ---------- */
+  var CRC=(function(){var t=[];for(var n=0;n<256;n++){var c=n;for(var k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+  function crc32(u){var c=0xFFFFFFFF;for(var i=0;i<u.length;i++)c=CRC[(c^u[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0}
+  function zip(files){
+    var enc=new TextEncoder(),parts=[],central=[],off=0;
+    files.forEach(function(f){
+      var name=enc.encode(f.name),data=enc.encode(f.data),crc=crc32(data);
+      var h=new DataView(new ArrayBuffer(30));
+      h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x0800,true);h.setUint16(8,0,true);
+      h.setUint16(10,0,true);h.setUint16(12,0x21,true);h.setUint32(14,crc,true);h.setUint32(18,data.length,true);
+      h.setUint32(22,data.length,true);h.setUint16(26,name.length,true);h.setUint16(28,0,true);
+      parts.push(new Uint8Array(h.buffer),name,data);
+      var c=new DataView(new ArrayBuffer(46));
+      c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);c.setUint16(8,0x0800,true);
+      c.setUint16(10,0,true);c.setUint16(12,0,true);c.setUint16(14,0x21,true);c.setUint32(16,crc,true);
+      c.setUint32(20,data.length,true);c.setUint32(24,data.length,true);c.setUint16(28,name.length,true);
+      c.setUint32(42,off,true);
+      central.push(new Uint8Array(c.buffer),name);
+      off+=30+name.length+data.length;
     });
-    lines.push(["Team total",m,Math.floor(team/60),team%60,"",""]);
-    var csv=lines.map(function(r){return r.map(function(v){v=String(v==null?"":v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(",")}).join("\r\n");
-    deliver("overtime-"+m+".csv","\ufeff"+csv,"text/csv");
+    var cdSize=central.reduce(function(a,x){return a+x.length},0);
+    var e=new DataView(new ArrayBuffer(22));
+    e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);
+    e.setUint32(12,cdSize,true);e.setUint32(16,off,true);
+    return new Blob(parts.concat(central,[new Uint8Array(e.buffer)]),{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  }
+
+  /* ---------- Excel (.xlsx) with live formulas ---------- */
+  var HM_FMT='[h] "h" mm "min"';
+  function serial(d){return (Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())-Date.UTC(1899,11,30))/86400000}
+  function hmText(t){return Math.floor(t/60)+" h "+String(t%60).padStart(2,"0")+" min"}
+  function S(ref,st,v){return '<c r="'+ref+'" s="'+st+'" t="inlineStr"><is><t xml:space="preserve">'+esc(v)+'</t></is></c>'}
+  function N(ref,st,v){return (v===""||v==null)?'<c r="'+ref+'" s="'+st+'"/>':'<c r="'+ref+'" s="'+st+'"><v>'+v+'</v></c>'}
+  function F(ref,st,f,v,str){return '<c r="'+ref+'" s="'+st+'"'+(str?' t="str"':'')+'><f>'+esc(f)+'</f><v>'+esc(v)+'</v></c>'}
+  function sheetXml(p){
+    var m=monthName(month),rows=[],r=1,days=monthDays(),first=4,sumH=0,sumM=0;
+    rows.push('<row r="1">'+S("A1",1,"OVERTIME — "+m)+'</row>');
+    rows.push('<row r="2">'+S("A2",0,"Name: "+p.name)+'</row>');
+    rows.push('<row r="3">'+S("A3",2,"Date")+S("B3",2,"HRS")+S("C3",2,"MINS")+S("D3",2,"Project")+S("E3",2,"Note")+'</row>');
+    r=first;
+    days.forEach(function(d){
+      var e=p.days[iso(d)]||{},fri=d.getDay()===5;
+      var h=Number(e.hours)||0,mi=Number(e.mins)||0; sumH+=h; sumM+=mi;
+      var sd=fri?7:3,sn=fri?15:5,st=fri?16:6;
+      rows.push('<row r="'+r+'">'+N("A"+r,sd,serial(d))+N("B"+r,sn,h||"")+N("C"+r,sn,mi||"")+S("D"+r,st,e.project||"")+S("E"+r,st,e.note||(fri?"Off":""))+'</row>');
+      r++;
+    });
+    var last=r-1,t1=r,t2=r+1,t3=r+2,t4=r+3,rng="B"+first+":B"+last,rngM="C"+first+":C"+last;
+    var tot=sumH*60+sumM;
+    rows.push('<row r="'+t1+'">'+S("A"+t1,9,"Column totals")+F("B"+t1,10,"SUM("+rng+")",sumH)+F("C"+t1,10,"SUM("+rngM+")",sumM)+'</row>');
+    rows.push('<row r="'+t2+'">'+S("A"+t2,9,"TOTAL")+F("B"+t2,13,"(B"+t1+"*60+C"+t1+")/1440",tot/1440)+N("C"+t2,13,"")+'</row>');
+    rows.push('<row r="'+t3+'">'+S("A"+t3,9,"Rate per hour")+N("B"+t3,12,p.rate||"")+N("C"+t3,12,"")+'</row>');
+    rows.push('<row r="'+t4+'">'+S("A"+t4,9,"Overtime pay")+F("B"+t4,11,"B"+t2+"*24*B"+t3,(tot/60*(p.rate||0)).toFixed(2))+N("C"+t4,11,"")+'</row>');
+    var merges=["A1:E1","A2:E2","B"+t2+":C"+t2,"B"+t3+":C"+t3,"B"+t4+":C"+t4];
+    return {t1:t1,t2:t2,tot:tot,count:Object.keys(p.days).length,
+      xml:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0"><pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="31" customWidth="1"/><col min="2" max="3" width="9" customWidth="1"/><col min="4" max="4" width="22" customWidth="1"/><col min="5" max="5" width="30" customWidth="1"/></cols><sheetData>'+rows.join("")+'</sheetData><mergeCells count="'+merges.length+'">'+merges.map(function(x){return '<mergeCell ref="'+x+'"/>'}).join("")+'</mergeCells><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="1"/></worksheet>'};
+  }
+  function sheetName(n,used){
+    var b=n.replace(/[\[\]\:\*\?\/\\]/g," ").slice(0,28).trim()||"Sheet",x=b,i=2;
+    while(used[x.toLowerCase()]){x=b.slice(0,26)+" "+(i++)}
+    used[x.toLowerCase()]=1; return x;
+  }
+  $("exportXlsx").onclick=function(){
+    var m=ym(month),ps=people(m),used={team:1},sheets=[];
+    ps.forEach(function(p){var sh=sheetXml(p);sh.name=sheetName(p.name,used);sh.p=p;sheets.push(sh)});
+    if(ps.length>1){
+      var rows=['<row r="1">'+S("A1",1,"TEAM OVERTIME — "+monthName(month))+'</row>',
+        '<row r="2">'+S("A2",2,"Person")+S("B2",2,"Days")+S("C2",2,"Total")+'</row>'],r=3,all=0;
+      sheets.forEach(function(sh){
+        var q="'"+sh.name.replace(/'/g,"''")+"'!";
+        rows.push('<row r="'+r+'">'+S("A"+r,6,sh.p.name)+N("B"+r,5,sh.count)+F("C"+r,14,q+"B"+sh.t2,sh.tot/1440)+'</row>');all+=sh.tot;r++;
+      });
+      rows.push('<row r="'+r+'">'+S("A"+r,9,"TEAM TOTAL")+F("B"+r,10,"SUM(B3:B"+(r-1)+")",sheets.reduce(function(a,x){return a+x.count},0))+F("C"+r,13,"SUM(C3:C"+(r-1)+")",all/1440)+'</row>');
+      sheets.push({name:"Team",xml:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols><col min="1" max="1" width="24" customWidth="1"/><col min="2" max="2" width="8" customWidth="1"/><col min="3" max="3" width="16" customWidth="1"/></cols><sheetData>'+rows.join("")+'</sheetData><mergeCells count="1"><mergeCell ref="A1:C1"/></mergeCells></worksheet>'});
+    }
+    var styles='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'+
+      '<numFmts count="2"><numFmt numFmtId="164" formatCode="dddd, mmmm d, yyyy"/><numFmt numFmtId="165" formatCode="'+esc(HM_FMT)+'"/></numFmts>'+
+      '<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="14"/><name val="Calibri"/></font></fonts>'+
+      '<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF4A6A6"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFBE3D6"/></patternFill></fill></fills>'+
+      '<borders count="2"><border/><border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/><diagonal/></border></borders>'+
+      '<cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="17">'+
+      '<xf/>'+                                                                         /*0*/
+      '<xf fontId="2" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'+ /*1 title*/
+      '<xf fontId="1" fillId="3" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'+ /*2 header*/
+      '<xf numFmtId="164" borderId="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'+ /*3 date*/
+      '<xf/>'+                                                                         /*4 unused*/
+      '<xf numFmtId="1" borderId="1" applyNumberFormat="1" applyBorder="1"/>'+          /*5 number*/
+      '<xf borderId="1" applyBorder="1"/>'+                                             /*6 text*/
+      '<xf numFmtId="164" fillId="2" borderId="1" applyNumberFormat="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'+ /*7 date fri*/
+      '<xf/>'+                                                                         /*8 unused*/
+      '<xf fontId="1" fillId="3" borderId="1" applyFont="1" applyFill="1" applyBorder="1"/>'+ /*9 total label*/
+      '<xf numFmtId="1" fontId="1" fillId="3" borderId="1" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>'+ /*10 total num*/
+      '<xf numFmtId="4" fontId="1" fillId="3" borderId="1" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'+ /*11 pay*/
+      '<xf numFmtId="4" borderId="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'+ /*12 rate*/
+      '<xf numFmtId="165" fontId="1" fillId="3" borderId="1" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'+ /*13 total h:mm*/
+      '<xf numFmtId="165" borderId="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right"/></xf>'+ /*14 h:mm*/
+      '<xf numFmtId="1" fillId="2" borderId="1" applyNumberFormat="1" applyFill="1" applyBorder="1"/>'+ /*15 number fri*/
+      '<xf fillId="2" borderId="1" applyFill="1" applyBorder="1"/>'+ /*16 text fri*/
+      '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+    var files=[
+      {name:"[Content_Types].xml",data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+sheets.map(function(x,i){return '<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'}).join("")+'</Types>'},
+      {name:"_rels/.rels",data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'},
+      {name:"xl/workbook.xml",data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+sheets.map(function(x,i){return '<sheet name="'+esc(x.name)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>'}).join("")+'</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>'},
+      {name:"xl/_rels/workbook.xml.rels",data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+sheets.map(function(x,i){return '<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>'}).join("")+'<Relationship Id="rId'+(sheets.length+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'},
+      {name:"xl/styles.xml",data:styles}
+    ].concat(sheets.map(function(x,i){return {name:"xl/worksheets/sheet"+(i+1)+".xml",data:x.xml}}));
+    var blob=zip(files);
+    deliverBlob("overtime-"+m+".xlsx",blob);
   };
+
+  /* ---------- PDF (print / Save as PDF) ---------- */
+  $("exportPdf").onclick=function(){
+    var m=ym(month),ps=people(m),html="";
+    ps.forEach(function(p,i){
+      var h=0,mi=0,body="";
+      monthDays().forEach(function(d){
+        var e=p.days[iso(d)]||{},fri=d.getDay()===5;h+=Number(e.hours)||0;mi+=Number(e.mins)||0;
+        body+='<tr'+(fri?' class="off"':'')+'><td>'+esc(d.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"}))+'</td><td class="n">'+(e.hours?esc(e.hours):"")+'</td><td class="n">'+(e.mins?esc(e.mins):"")+'</td><td>'+esc(e.project||"")+'</td><td>'+esc(e.note||(fri?"Off":""))+'</td></tr>';
+      });
+      var tot=h*60+mi;
+      body+='<tr class="tot"><td>Column totals</td><td class="n">'+h+'</td><td class="n">'+mi+'</td><td colspan="2"></td></tr>';
+      body+='<tr class="tot"><td>TOTAL</td><td colspan="2" style="text-align:center">'+hmText(tot)+'</td><td colspan="2"></td></tr>';
+      if(p.rate){
+        body+='<tr class="tot"><td>Rate per hour</td><td colspan="2" style="text-align:center">'+p.rate.toFixed(2)+'</td><td colspan="2"></td></tr>';
+        body+='<tr class="tot"><td>Overtime pay</td><td colspan="2" style="text-align:center">'+(tot/60*p.rate).toFixed(2)+'</td><td colspan="2"></td></tr>';
+      }
+      html+='<section'+(i?' class="pb"':'')+'><h1>OVERTIME</h1><div class="meta"><span>'+esc(p.name)+'</span><span>'+esc(monthName(month))+'</span></div><table><thead><tr><th>Date</th><th>HRS</th><th>MINS</th><th>Project</th><th>Note</th></tr></thead><tbody>'+body+'</tbody></table></section>';
+    });
+    if(ps.length>1){
+      var rows="",all=0;
+      ps.forEach(function(p){var s=sumDays(p.days);all+=s.mins;rows+='<tr><td>'+esc(p.name)+'</td><td class="n">'+s.count+'</td><td class="n">'+hmText(s.mins)+'</td></tr>'});
+      rows+='<tr class="tot"><td>TEAM TOTAL</td><td class="n"></td><td class="n">'+hmText(all)+'</td></tr>';
+      html+='<section class="pb"><h1>TEAM OVERTIME</h1><div class="meta"><span></span><span>'+esc(monthName(month))+'</span></div><table><thead><tr><th>Person</th><th>Days</th><th>Total</th></tr></thead><tbody>'+rows+'</tbody></table></section>';
+    }
+    $("printArea").innerHTML=html;
+    var t=document.title; document.title="overtime-"+m;
+    setTimeout(function(){window.print();document.title=t},50);
+  };
+
+  async function deliverBlob(name,blob){
+    var file=new File([blob],name,{type:blob.type});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:name});return}catch(e){if(e&&e.name==="AbortError")return}}
+    var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(function(){URL.revokeObjectURL(a.href)},2000);
+  }
 
   /* first run: seed September 2026 from the sheet */
   if(!Object.keys(store.months).length&&!localStorage.getItem(KEY)){
