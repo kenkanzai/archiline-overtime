@@ -138,7 +138,7 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);padding:8px 4px}
         <button id="exportXlsx">Export Excel</button>
         <button id="exportPdf">Export PDF</button>
       </div>
-      <p class="note">Share sends or saves a small file. Teammates import it here to build the team table. Re-importing the same person replaces their old month. Export PDF opens the print window: choose Save as PDF.</p>
+      <p class="note">Share sends or saves a small file. Teammates import it here to build the team table. Re-importing the same person replaces their old month. Export PDF saves a PDF file.</p>
     </section>
   </div>
 </div>
@@ -409,32 +409,91 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);padding:8px 4px}
   };
 
   /* ---------- PDF (print / Save as PDF) ---------- */
+  /* ---------- PDF file built directly (not printed, so phone dark mode cannot affect it) ---------- */
+  var HW=[278, 278, 355, 556, 556, 889, 667, 222, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 222, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584],HWB=[278, 333, 474, 556, 556, 889, 722, 278, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611, 975, 722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333, 278, 333, 584, 556, 278, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611, 611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584];
+  function pdfSafe(t){
+    t=String(t==null?"":t).replace(/[\u2018\u2019]/g,"'").replace(/[\u201C\u201D]/g,'"').replace(/[\u2013\u2014]/g,"-");
+    var o="";for(var i=0;i<t.length;i++){var c=t.charCodeAt(i);o+=((c>=32&&c<=126)||(c>=160&&c<=255))?t[i]:"?"}return o;
+  }
+  function textW(t,size,bold){var a=bold?HWB:HW,w=0;for(var i=0;i<t.length;i++)w+=a[t.charCodeAt(i)-32]||556;return w*size/1000}
+  function fitText(t,size,bold,max){t=pdfSafe(t);if(textW(t,size,bold)<=max)return t;while(t.length&&textW(t+"...",size,bold)>max)t=t.slice(0,-1);return t+"..."}
+  function Page(){this.ops=[]}
+  Page.prototype.rect=function(x,y,w,h,fill){ /* y from top */
+    var Y=842-y-h;
+    if(fill)this.ops.push(fill[0]+" "+fill[1]+" "+fill[2]+" rg "+x.toFixed(2)+" "+Y.toFixed(2)+" "+w.toFixed(2)+" "+h.toFixed(2)+" re f");
+    this.ops.push("0 0 0 RG 0.6 w "+x.toFixed(2)+" "+Y.toFixed(2)+" "+w.toFixed(2)+" "+h.toFixed(2)+" re S");
+  };
+  Page.prototype.text=function(t,x,y,size,bold,align,w){ /* y = baseline from top */
+    t=pdfSafe(t); var tw=textW(t,size,bold);
+    if(align==="center")x=x+(w-tw)/2; else if(align==="right")x=x+w-tw;
+    t=t.replace(/\\/g,"\\\\").replace(/\(/g,"\\(").replace(/\)/g,"\\)");
+    this.ops.push("BT 0 0 0 rg /"+(bold?"F2":"F1")+" "+size+" Tf "+x.toFixed(2)+" "+(842-y).toFixed(2)+" Td ("+t+") Tj ET");
+  };
+  function buildPdf(pages){
+    var objs=[],out="%PDF-1.4\n",offs=[];
+    var kids=pages.map(function(_,i){return (5+i*2)+" 0 R"}).join(" ");
+    objs.push("<< /Type /Catalog /Pages 2 0 R >>");
+    objs.push("<< /Type /Pages /Kids ["+kids+"] /Count "+pages.length+" >>");
+    objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+    objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
+    pages.forEach(function(pg,i){
+      var c=pg.ops.join("\n");
+      objs.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents "+(6+i*2)+" 0 R >>");
+      objs.push("<< /Length "+c.length+" >>\nstream\n"+c+"\nendstream");
+    });
+    objs.forEach(function(o,i){offs.push(out.length);out+=(i+1)+" 0 obj\n"+o+"\nendobj\n"});
+    var x=out.length;
+    out+="xref\n0 "+(objs.length+1)+"\n0000000000 65535 f \n"+offs.map(function(o){return String(o).padStart(10,"0")+" 00000 n \n"}).join("");
+    out+="trailer\n<< /Size "+(objs.length+1)+" /Root 1 0 R >>\nstartxref\n"+x+"\n%%EOF";
+    var u=new Uint8Array(out.length);for(var i=0;i<out.length;i++)u[i]=out.charCodeAt(i)&255;
+    return new Blob([u],{type:"application/pdf"});
+  }
+  var PINK=[0.957,0.651,0.651],PEACH=[0.984,0.890,0.839];
   $("exportPdf").onclick=function(){
-    var m=ym(month),ps=people(m),html="";
-    ps.forEach(function(p,i){
-      var h=0,mi=0,body="";
+    var m=ym(month),ps=people(m),pages=[],L=34,W=527;
+    var cols=[190,58,58,110,111],hdr=["Date","HRS","MINS","Project","Note"],RH=16;
+    function colX(i){var x=L;for(var k=0;k<i;k++)x+=cols[k];return x}
+    function row(pg,y,cells,fill,bold,aligns){
+      cells.forEach(function(v,i){
+        pg.rect(colX(i),y,cols[i],RH,fill);
+        if(v!==""&&v!=null){var a=aligns[i]||"left",pad=4;pg.text(fitText(v,8.5,bold,cols[i]-2*pad),colX(i)+pad,y+11.3,8.5,bold,a,cols[i]-2*pad)}
+      });
+    }
+    function spanRow(pg,y,label,value){
+      pg.rect(colX(0),y,cols[0],RH,PEACH);pg.text(label,colX(0)+4,y+11.3,8.5,true);
+      pg.rect(colX(1),y,cols[1]+cols[2],RH,PEACH);pg.text(value,colX(1),y+11.3,8.5,true,"center",cols[1]+cols[2]);
+      pg.rect(colX(3),y,cols[3]+cols[4],RH,PEACH);
+    }
+    function head(pg,title,left,right){
+      pg.rect(L,34,W,24,PINK);pg.text(title,L,51,14,true,"center",W);
+      pg.text(fitText(left,9,false,W/2),L,72,9,false);pg.text(right,L,72,9,false,"right",W);
+    }
+    var mName=monthName(month);
+    ps.forEach(function(p){
+      var pg=new Page(),y=80,h=0,mi=0;
+      head(pg,"OVERTIME",p.name,mName);
+      row(pg,y,hdr,PEACH,true,["center","center","center","center","center"]);y+=RH;
       monthDays().forEach(function(d){
         var e=p.days[iso(d)]||{},fri=d.getDay()===5;h+=Number(e.hours)||0;mi+=Number(e.mins)||0;
-        body+='<tr'+(fri?' class="off"':'')+'><td>'+esc(d.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"}))+'</td><td class="n">'+(e.hours?esc(e.hours):"")+'</td><td class="n">'+(e.mins?esc(e.mins):"")+'</td><td>'+esc(e.project||"")+'</td><td>'+esc(e.note||(fri?"Off":""))+'</td></tr>';
+        row(pg,y,[d.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"}),e.hours?String(e.hours):"",e.mins?String(e.mins):"",e.project||"",e.note||(fri?"Off":"")],fri?PINK:null,false,["left","right","right","left","left"]);
+        y+=RH;
       });
       var tot=h*60+mi;
-      body+='<tr class="tot"><td>Column totals</td><td class="n">'+h+'</td><td class="n">'+mi+'</td><td colspan="2"></td></tr>';
-      body+='<tr class="tot"><td>TOTAL</td><td colspan="2" style="text-align:center">'+hmText(tot)+'</td><td colspan="2"></td></tr>';
-      if(p.rate){
-        body+='<tr class="tot"><td>Rate per hour</td><td colspan="2" style="text-align:center">'+p.rate.toFixed(2)+'</td><td colspan="2"></td></tr>';
-        body+='<tr class="tot"><td>Overtime pay</td><td colspan="2" style="text-align:center">'+(tot/60*p.rate).toFixed(2)+'</td><td colspan="2"></td></tr>';
-      }
-      html+='<section'+(i?' class="pb"':'')+'><h1>OVERTIME</h1><div class="meta"><span>'+esc(p.name)+'</span><span>'+esc(monthName(month))+'</span></div><table><thead><tr><th>Date</th><th>HRS</th><th>MINS</th><th>Project</th><th>Note</th></tr></thead><tbody>'+body+'</tbody></table></section>';
+      row(pg,y,["Column totals",String(h),String(mi),"",""],PEACH,true,["left","right","right"]);y+=RH;
+      spanRow(pg,y,"TOTAL",hmText(tot));y+=RH;
+      if(p.rate){spanRow(pg,y,"Rate per hour",p.rate.toFixed(2));y+=RH;spanRow(pg,y,"Overtime pay",(tot/60*p.rate).toFixed(2));y+=RH}
+      pages.push(pg);
     });
     if(ps.length>1){
-      var rows="",all=0;
-      ps.forEach(function(p){var s=sumDays(p.days);all+=s.mins;rows+='<tr><td>'+esc(p.name)+'</td><td class="n">'+s.count+'</td><td class="n">'+hmText(s.mins)+'</td></tr>'});
-      rows+='<tr class="tot"><td>TEAM TOTAL</td><td class="n"></td><td class="n">'+hmText(all)+'</td></tr>';
-      html+='<section class="pb"><h1>TEAM OVERTIME</h1><div class="meta"><span></span><span>'+esc(monthName(month))+'</span></div><table><thead><tr><th>Person</th><th>Days</th><th>Total</th></tr></thead><tbody>'+rows+'</tbody></table></section>';
+      var pg=new Page(),y=80,all=0;cols=[300,80,147];
+      head(pg,"TEAM OVERTIME","",mName);
+      row(pg,y,["Person","Days","Total"],PEACH,true,["center","center","center"]);y+=RH;
+      ps.forEach(function(p){var s=sumDays(p.days);all+=s.mins;row(pg,y,[p.name,String(s.count),hmText(s.mins)],null,false,["left","right","right"]);y+=RH});
+      row(pg,y,["TEAM TOTAL","",hmText(all)],PEACH,true,["left","right","right"]);
+      pages.push(pg);
     }
-    $("printArea").innerHTML=html;
-    var t=document.title; document.title="overtime-"+m;
-    setTimeout(function(){window.print();document.title=t},50);
+    var nm=(store.name||"Me").replace(/[^\w-]+/g,"_");
+    deliverBlob("overtime-"+nm+"-"+m+".pdf",buildPdf(pages));
   };
 
   async function deliverBlob(name,blob){
