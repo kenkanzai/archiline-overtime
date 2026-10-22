@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#155E54">
+<meta name="color-scheme" content="light dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Overtime">
 <link rel="manifest" href="manifest.json">
@@ -12,7 +13,13 @@
 <style>
 :root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
   --bg:#F6F7F4;--panel:#FFFFFF;--ink:#17201E;--muted:#5F6B68;--line:#D9DED9;--brand:#155E54;--brand-ink:#FFFFFF;--tint:#E3EFEA;--off:#FBE3E3;--off-ink:#7A2626;--danger:#9E2F2F}
-@media (prefers-color-scheme:dark){:root{--bg:#131917;--panel:#1B2320;--ink:#ECEFEC;--muted:#9AA8A3;--line:#2E3935;--brand:#5DCAA5;--brand-ink:#04342C;--tint:#1F332D;--off:#3A2222;--off-ink:#F09595;--danger:#F09595}}
+:root{color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#131917;--panel:#1B2320;--ink:#ECEFEC;--muted:#9AA8A3;--line:#2E3935;--brand:#5DCAA5;--brand-ink:#04342C;--tint:#1F332D;--off:#3A2222;--off-ink:#F09595;--danger:#F09595}}
+:root[data-theme="light"]{color-scheme:only light}
+:root[data-theme="dark"]{color-scheme:only dark;--bg:#131917;--panel:#1B2320;--ink:#ECEFEC;--muted:#9AA8A3;--line:#2E3935;--brand:#5DCAA5;--brand-ink:#04342C;--tint:#1F332D;--off:#3A2222;--off-ink:#F09595;--danger:#F09595}
+.theme{display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.theme button{border:none;border-radius:0;padding:6px 10px;font-size:13px;background:var(--panel);color:var(--muted)}
+.theme button[aria-pressed="true"]{background:var(--brand);color:var(--brand-ink);font-weight:600}
 *{box-sizing:inherit}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .wrap{max-width:1040px;margin:0 auto;padding:16px 12px 48px}
@@ -55,6 +62,8 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);padding:8px 4px}
 .link{background:none;border:none;color:var(--danger);padding:0;font-size:13px}
 #printArea{display:none}
 @media print{
+  :root,:root[data-theme]{color-scheme:only light !important}
+  html,body{background:#fff !important;color:#000 !important}
   @page{size:A4 portrait;margin:12mm}
   body{background:#fff;color:#000;font-size:10pt}
   .wrap{display:none}
@@ -81,6 +90,7 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);padding:8px 4px}
     <div>
       <h1>Overtime record</h1>
       <div class="sub"><span>Your name</span><input id="name" placeholder="e.g. Christopher"></div>
+      <div class="sub" style="margin-top:8px"><span>Theme</span><div class="theme" role="group" aria-label="Theme"><button data-t="auto">Auto</button><button data-t="light">Light</button><button data-t="dark">Dark</button></div></div>
     </div>
     <div class="monthnav">
       <button class="icon" id="prev" aria-label="Previous month">‹</button>
@@ -210,6 +220,13 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);padding:8px 4px}
   });
   $("rate").value=store.rate||"";
   $("rate").oninput=function(){var v=this.value===""?0:Number(this.value);if(v<0||isNaN(v)){setMsg("Rate must be 0 or more.",true);return}store.rate=v;save();recalc();setMsg("Saved.")};
+  function applyTheme(){
+    var t=store.theme||"auto";
+    if(t==="auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme",t);
+    document.querySelectorAll(".theme button").forEach(function(b){b.setAttribute("aria-pressed",b.dataset.t===t?"true":"false")});
+  }
+  document.querySelectorAll(".theme button").forEach(function(b){b.onclick=function(){store.theme=b.dataset.t;save();applyTheme()}});
+  applyTheme();
   $("name").value=store.name||"";
   $("name").oninput=function(){store.name=this.value.trim();save();renderTeam()};
 
